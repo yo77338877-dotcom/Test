@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Signal-Dashboard</title>
+<style>
+:root{--bg:#18232e;--p:#213141;--l:#2d4256;--t:#e6edf3;--m:#8ea2b5;--long:#34c5a1;--short:#ff7b5c;--gold:#f0c35a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t);font:15px/1.45 "Avenir Next","Segoe UI",system-ui,sans-serif;font-variant-numeric:tabular-nums}
+main{max-width:1100px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px}
+.top{display:grid;gap:12px;grid-template-columns:1fr;margin-top:12px}
+@media(min-width:760px){.top{grid-template-columns:1.2fr 1fr}}
+.card{background:var(--p);border:1px solid var(--l);border-radius:10px;padding:12px 14px}
+.m{color:var(--m)}.clock{font-size:22px;font-weight:600}
+.ctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+input,select,button{background:var(--bg);color:var(--t);border:1px solid var(--l);border-radius:8px;padding:8px 10px;font:inherit}
+button{cursor:pointer;background:var(--l)}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:600px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--l);white-space:normal}
+th{color:var(--m);font-weight:500}
+.sig{font-weight:700}.L{color:var(--long)}.S{color:var(--short)}.N{color:var(--m)}
+.chip{display:inline-block;margin:0 4px 0 0;padding:1px 7px;border-radius:99px;font-size:12px;border:1px solid var(--l);color:var(--t)}
+.chip.L{border-color:var(--long)}.chip.S{border-color:var(--short)}
+.sub{display:block;color:var(--m);font-size:12px}.err{color:var(--gold)}.small{font-size:13px}.ctl label{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.ctl input[type=number]{width:84px}details{margin-top:16px}summary{cursor:pointer;font-weight:600}dt{font-weight:600;margin-top:8px}dd{margin:0;color:var(--m)}
+</style></head><body><main>
+<h1>Signal-Dashboard</h1>
+<div class="m">Regelbasierte Long- und Short-Signale auf 5-Minuten-Kerzen. Du handelst selbst, das Dashboard handelt nicht.</div>
+<div class="top">
+ <div class="card"><div class="clock" id="clk"></div><div id="phase"></div><div class="m small" id="ptxt"></div></div>
+ <div class="card">
+  <input id="fkey" type="password" placeholder="Bitpanda-Fusion-Key, nur Read-Recht (Krypto)" aria-label="Bitpanda-Fusion-Key" style="width:100%">
+  <div class="m small" style="margin:4px 0 8px">Bitpanda: Kontoeinstellungen, API-Schlüssel, Fusion. Nur das Recht Read vergeben, niemals Trade.</div>
+  <input id="key" type="password" placeholder="Twelve-Data-API-Key (Aktien)" aria-label="Twelve-Data-API-Key" style="width:100%">
+  <div class="ctl"><select id="iv" aria-label="Aktualisierung"><option value="60">alle 1 Min</option><option value="180">alle 3 Min</option><option value="300">alle 5 Min</option></select>
+  <button id="go">Jetzt laden</button><span class="m small" id="cd"></span></div>
+  <div class="ctl"><input id="cs" size="24" aria-label="Krypto-Liste"><input id="ss" size="24" aria-label="Aktien-Liste"></div>
+  <div class="ctl"><select id="tf" aria-label="Zeitrahmen"><option value="5m">Daytrading 5 Min</option><option value="1h">1 Stunde</option><option value="4h">Swing 4 Std</option><option value="1d">Position 1 Tag</option></select>
+  <select id="cur" aria-label="Anzeige"><option value="EUR">Anzeige in €</option><option value="USD">Anzeige in $</option></select>
+  <select id="show" aria-label="Zeige"><option value="all">alle Werte</option><option value="sig">nur Signale</option></select>
+  <button id="wk">Bildschirm wach halten</button></div>
+ </div>
+</div>
+<div class="card" style="margin-top:12px"><b>Einsatz und Kosten</b>
+ <div class="ctl">
+  <label>Einsatz € <input id="eins" type="number" min="1"></label>
+  <label>Hebel <input id="hebel" type="number" min="1"></label>
+  <label>Gebühr Krypto % je Seite <input id="fkr" type="number" step="0.01"></label>
+  <label>Gebühr Aktien % je Seite <input id="fak" type="number" step="0.01"></label>
+  <label>Fix je Verkauf € (Aktien) <input id="fx" type="number" step="0.1"></label>
+  <label>Spread % <input id="sp" type="number" step="0.01"></label>
+  <label>Zusatz % (z. B. Funding) <input id="zs" type="number" step="0.01"></label>
+ </div>
+ <div class="m small" style="margin-top:6px">Die Vorgaben sind Platzhalter. Trage deine echten Gebühren aus der Bitpanda-App ein. <span id="rate"></span></div></div>
+<h2>Signale</h2>
+<div class="wrap"><table id="tb"></table></div>
+<div id="msg" class="err small"></div>
+<div class="m small">Stop = 1,5 x ATR, Ziel = 3 x ATR (2R). Verlust am Stop auf deinen Einsatz = Stop-Abstand x Hebel (Beispiel: 0,6 % x 10 = 6 %). Signal ab Score 3, stark ab 4. "Lohnt sich" heißt: Chance-Risiko nach Kosten mindestens 1,5. Preise, Stops und Ziele zeigt das Dashboard in der gewählten Währung, sobald der Eurokurs geladen ist.</div>
+<h2>Auswertung der Signale</h2>
+<div class="card wrap" id="stat"></div>
+<h2>Signal-Protokoll</h2>
+<div class="wrap"><table id="lg"></table></div>
+<div class="ctl"><button id="clr">Protokoll leeren</button></div>
+<details><summary>Abkürzungen erklärt</summary><dl>
+<dt>Long / Short</dt><dd>Long wettet auf steigende, Short auf fallende Kurse.</dd>
+<dt>Score</dt><dd>Summe aller Regeln, die in eine Richtung zeigen. Plus ist Long, minus ist Short.</dd>
+<dt>Stop / Ziel</dt><dd>Stop-Loss ist der Preis, bei dem du aussteigst, um den Verlust zu begrenzen. Ziel ist der Take-Profit, bei dem du Gewinn mitnimmst.</dd>
+<dt>R, Chance-Risiko</dt><dd>1R ist dein Risiko bis zum Stop. Ein Ziel bei 2R bringt doppelt so viel, wie du am Stop verlierst.</dd>
+<dt>ATR</dt><dd>Average True Range, die durchschnittliche Schwankung einer Kerze. Stop und Ziel richten sich danach.</dd>
+<dt>EMA 9 / 21 / 50</dt><dd>Gleitende Durchschnitte, die neuere Kurse stärker gewichten. Liegt der kurze über dem langen, steigt der Trend.</dd>
+<dt>VWAP</dt><dd>Volumengewichteter Durchschnittspreis des Tages. Darüber kaufen die Käufer, darunter die Verkäufer.</dd>
+<dt>MACD</dt><dd>Zeigt, ob der Schwung zu- oder abnimmt.</dd>
+<dt>RSI</dt><dd>Relative-Stärke-Index von 0 bis 100. Unter 30 gilt als überverkauft, über 70 als überkauft.</dd>
+<dt>Bollinger-Bänder</dt><dd>Kanal um den Durchschnitt. Ein Schlusskurs außerhalb kann einen Ausbruch anzeigen.</dd>
+<dt>Opening Range</dt><dd>Hoch und Tief der ersten 30 Minuten der US-Börse. Ein Ausbruch daraus gilt als Richtungssignal.</dd>
+<dt>Volumen 1,5x</dt><dd>Die letzte Kerze hatte 1,5-mal so viel Handel wie der Durchschnitt.</dd>
+<dt>Spread</dt><dd>Abstand zwischen Kauf- und Verkaufspreis. Er kostet dich bei jedem Trade.</dd>
+<dt>Funding</dt><dd>Finanzierungskosten für gehebelte Positionen, die mit der Haltedauer steigen.</dd>
+<dt>Nötige Trefferquote</dt><dd>So oft muss das Ziel vor dem Stop erreicht werden, damit du nach Kosten nicht verlierst.</dd>
+<dt>Zeitrahmen</dt><dd>Länge einer Kerze. 5 Minuten für Daytrading, 4 Stunden und 1 Tag für Positionen, die du über Tage hältst.</dd>
+<dt>Ø R netto</dt><dd>Durchschnittliches Ergebnis pro Signal in R nach Kosten. Über 0 heißt: die Regeln hätten sich gelohnt.</dd></dl></details>
+<p class="m small">Keine Anlageberatung. Die Regeln sind Standardverfahren des Daytradings, ihre Schwellen sind nicht optimiert und nicht getestet. Ob ein Wert bei Bitpanda handelbar ist, prüfst du dort selbst.</p>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const st={get(k,d){try{return localStorage.getItem(k)||d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+$('#key').value=st.get('key','');
+$('#fkey').value=st.get('fkey','');
+if(st.get('v','')!=='3'){st.set('cs','');st.set('v','3')}
+['tf','cur','show'].forEach(k=>$('#'+k).value=st.get(k,{tf:'5m',cur:'EUR',show:'all'}[k]));
+$('#cs').value=st.get('cs','BTC,ETH,SOL,XRP,DOGE,ADA,LINK,AVAX,DOT,LTC,BCH,ATOM,UNI,NEAR,XLM,TRX,SUI,APT,ARB,INJ');
+$('#ss').value=st.get('ss','AAPL,MSFT,NVDA,TSLA,AMZN,META,GOOGL,AMD');
+$('#iv').value=st.get('iv','180');
+const CF={eins:1000,hebel:1,fkr:0.15,fak:0,fx:1,sp:0.1,zs:0};
+Object.keys(CF).forEach(k=>{$('#'+k).value=st.get(k,CF[k]);$('#'+k).addEventListener('input',()=>{st.set(k,$('#'+k).value);render()})});
+
+/* ---------- Indikatoren ---------- */
+const ema=(a,n)=>{const k=2/(n+1);let e=a[0];return a.map((v,i)=>i?(e=v*k+e*(1-k)):v)};
+function rsi(c,n=14){let g=0,l=0;for(let i=1;i<=n;i++){const d=c[i]-c[i-1];d>0?g+=d:l-=d}g/=n;l/=n;
+ for(let i=n+1;i<c.length;i++){const d=c[i]-c[i-1];g=(g*(n-1)+Math.max(d,0))/n;l=(l*(n-1)+Math.max(-d,0))/n}
+ return l===0?100:100-100/(1+g/l)}
+function atr(b,n=14){const tr=i=>Math.max(b[i].h-b[i].l,Math.abs(b[i].h-b[i-1].c),Math.abs(b[i].l-b[i-1].c));
+ let a=0;for(let i=1;i<=n;i++)a+=tr(i);a/=n;for(let i=n+1;i<b.length;i++)a=(a*(n-1)+tr(i))/n;return a}
+function bb(c,i){const s=c.slice(i-19,i+1),m=s.reduce((x,y)=>x+y)/20,sd=Math.sqrt(s.reduce((x,y)=>x+(y-m)**2,0)/20);return{u:m+2*sd,l:m-2*sd}}
+
+/* ---------- Signalerkennung ---------- */
+function analyze(b,stock,tf='5m'){
+ if(!b||b.length<60)return{err:'zu wenig Kerzen'};
+ const c=b.map(x=>x.c),n=c.length-1,p=c[n],R=[],add=(s,t)=>R.push({s,t});
+ const e9=ema(c,9),e21=ema(c,21),e50=ema(c,50),e12=ema(c,12),e26=ema(c,26);
+ const mac=e12.map((v,i)=>v-e26[i]),sg=ema(mac,9),h=mac.map((v,i)=>v-sg[i]);
+ // 1 Trend: EMA 9/21 und EMA 50
+ if(e9[n]>e21[n]&&p>e50[n])add(1,'Trend aufwärts');
+ else if(e9[n]<e21[n]&&p<e50[n])add(-1,'Trend abwärts');
+ // 2 frischer EMA-Cross (letzte 3 Kerzen)
+ for(let i=n-2;i<=n;i++){
+  if(e9[i-1]<=e21[i-1]&&e9[i]>e21[i]){add(1,'frischer EMA-Cross hoch');break}
+  if(e9[i-1]>=e21[i-1]&&e9[i]<e21[i]){add(-1,'frischer EMA-Cross runter');break}}
+ // 3 VWAP (ab Tagesbeginn UTC)
+ const d=Math.floor(b[n].t/864e5),day=b.filter(x=>Math.floor(x.t/864e5)===d);
+ let pv=0,vv=0;day.forEach(x=>{pv+=(x.h+x.l+x.c)/3*x.v;vv+=x.v});
+ if(vv>0&&(tf==='5m'||tf==='1h')){const vw=pv/vv;add(p>vw?1:-1,p>vw?'über VWAP':'unter VWAP')}
+ // 4 MACD-Histogramm
+ if(h[n]>0&&h[n]>h[n-1])add(1,'MACD steigt');else if(h[n]<0&&h[n]<h[n-1])add(-1,'MACD fällt');
+ // 5 RSI an den Extremen (bremst Trendsignale, wenn der Zug überdehnt ist)
+ const r=rsi(c);
+ if(r<30)add(1,'RSI '+r.toFixed(0)+' überverkauft');else if(r>70)add(-1,'RSI '+r.toFixed(0)+' überkauft');
+ // 6 Bollinger-Ausbruch
+ const q=bb(c,n),q1=bb(c,n-1);
+ if(p>q.u&&c[n-1]<=q1.u)add(1,'Bollinger-Ausbruch hoch');else if(p<q.l&&c[n-1]>=q1.l)add(-1,'Bollinger-Ausbruch runter');
+ // 7 Opening Range (nur Aktien, erste 30 Minuten der Sitzung)
+ if(stock&&tf==='5m'&&day.length>7){const o=day.slice(0,6),hi=Math.max(...o.map(x=>x.h)),lo=Math.min(...o.map(x=>x.l));
+  if(p>hi)add(1,'über Opening Range');else if(p<lo)add(-1,'unter Opening Range')}
+ // 8 Volumen der letzten abgeschlossenen Kerze
+ const av=b.slice(n-21,n-1).reduce((x,y)=>x+y.v,0)/20,k=b[n-1];
+ if(av>0&&k.v/av>=1.5)add(k.c>=k.o?1:-1,'Volumen '+(k.v/av).toFixed(1)+'x');
+ const sc=R.reduce((x,y)=>x+y.s,0),a=atr(b),dir=sc>=3?1:sc<=-3?-1:0;
+ return{p,sc,dir,strong:Math.abs(sc)>=4,R,stop:dir?p-dir*1.5*a:null,tgt:dir?p+dir*3*a:null,risk:1.5*a/p*100,age:Math.round((Date.now()-b[n].t)/6e4)};
+}
+
+/* ---------- Tageszeit (New York) ---------- */
+function nyNow(){const f=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour12:false,weekday:'short',hour:'numeric',minute:'numeric'}).formatToParts(new Date()),g=t=>f.find(x=>x.type===t).value;
+ return{wd:g('weekday'),m:(+g('hour')%24)*60+ +g('minute')}}
+function phase(){const{wd,m}=nyNow();
+ if(wd==='Sat'||wd==='Sun'||m<570||m>=960)return['US-Börse geschlossen','Aktiensignale beruhen auf der letzten Sitzung. Krypto läuft rund um die Uhr.',false];
+ if(m<630)return['Eröffnungsstunde','Höchste Volatilität, breite Spreads. Ausbrüche aus der Opening Range sind das Thema, Fehlausbrüche sind häufig.',true];
+ if(m<840)return['Mittagsphase','Volumen fällt, Kurse laufen oft seitwärts. Trendsignale sind schwächer, auf Volumenbestätigung achten.',true];
+ if(m<900)return['Nachmittag','Das Volumen kehrt zurück, der Tagestrend setzt sich häufig fort.',true];
+ return['Power Hour','Zweite Volumenspitze vor Handelsschluss, oft klare Richtung. Gehebelte Positionen vor 16:00 New York schließen.',true]}
+function clock(){const t=new Date(),f=z=>t.toLocaleTimeString('de-DE',{timeZone:z,hour:'2-digit',minute:'2-digit'}),[p,x]=phase();
+ $('#clk').textContent=f('Europe/Berlin')+' Berlin / '+f('America/New_York')+' New York';
+ $('#phase').innerHTML='<b>'+p+'</b>';$('#ptxt').textContent=x}
+
+/* ---------- Daten ---------- */
+const TF=()=>$('#tf').value,TD={'5m':'5min','1h':'1h','4h':'4h','1d':'1day'};
+const pd=d=>Date.parse((d.length<11?d+'T00:00:00':d.replace(' ','T'))+'Z');
+const blocked='Verbindung blockiert (Load failed)';
+async function hit(url,opt){let r;try{r=await fetch(url,opt)}catch(e){throw new Error(blocked)}
+ if(r.status===401||r.status===403)throw new Error('Key ungültig oder ohne Read-Recht ('+r.status+')');
+ if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
+async function getCrypto(s,fkey){
+ if(fkey){try{
+  const j=await hit('https://api.fusion.bitpanda.com/v1/candles/'+s+'-EUR?interval='+TF()+'&limit=200',{headers:{'x-api-key':fkey}});
+  const a=(Array.isArray(j)?j:j.candles||j.data||[]).map(k=>({t:k.timestamp<1e12?k.timestamp*1000:k.timestamp,o:+k.open,h:+k.high,l:+k.low,c:+k.close,v:+k.volume})).sort((x,y)=>x.t-y.t);
+  if(a.length)return{bars:a,src:'Bitpanda'};throw new Error('keine Kerzen für '+s+'-EUR')
+ }catch(e){fusionErr=e.message}}
+ const j=await hit('https://api.binance.com/api/v3/klines?symbol='+s+'USDT&interval='+TF()+'&limit=200');
+ return{bars:j.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]})),src:fkey?'Binance (Ersatz)':'Binance'}}
+async function getStocks(list,key){
+ const r=await fetch('https://api.twelvedata.com/time_series?symbol='+list.join(',')+'&interval='+TD[TF()]+'&outputsize=200&timezone=UTC&apikey='+encodeURIComponent(key));
+ const j=await r.json(),out={};
+ list.forEach(s=>{const d=list.length===1?j:j[s];
+  out[s]=d&&d.values?d.values.map(v=>({t:pd(v.datetime),o:+v.open,h:+v.high,l:+v.low,c:+v.close,v:+v.volume})).reverse()
+   :{err:(d&&d.message)||j.message||'keine Daten'}});
+ return out}
+
+const data={},lastDir={};let loaded=false,busy=false,cd=0,fusionErr='',usd=0,lastS=0;
+const esc=s=>String(s).replace(/</g,'&lt;');
+const list=id=>$(id).value.toUpperCase().split(/[\s,]+/).filter(Boolean);
+async function load(){
+ if(busy)return;busy=true;$('#msg').textContent='';
+ ['key','fkey','cs','ss','iv'].forEach(k=>st.set(k,$('#'+k).value));
+ const cs=list('#cs'),ss=list('#ss'),key=$('#key').value.trim(),jobs=[];
+ jobs.push(hit('https://api.binance.com/api/v3/ticker/price?symbol=EURUSDT').then(j=>{usd=+j.price||usd}).catch(()=>{}));
+ fusionErr='';const fk=$('#fkey').value.trim();
+ cs.forEach(s=>jobs.push(getCrypto(s,fk).then(o=>{data['C:'+s]={...analyze(o.bars,false,TF()),src:o.src,cur:o.src==='Bitpanda'?'EUR':'USD'};sim('C:'+s,s,o.bars,false,o.src==='Bitpanda'?'EUR':'USD')}).catch(e=>{data['C:'+s]={err:e.message}})));
+ if(ss.length&&(phase()[2]||!loaded)&&(!key||Date.now()-lastS>290000)){if(key)lastS=Date.now();
+  if(!key)$('#msg').textContent='Für Aktien den Twelve-Data-Key eintragen (kostenlos auf twelvedata.com).';
+  else jobs.push(getStocks(ss,key).then(o=>ss.forEach(s=>{data['S:'+s]=Array.isArray(o[s])?(sim('S:'+s,s,o[s],true,'USD'),{...analyze(o[s],true,TF()),src:'Twelve Data',cur:'USD'}):o[s]})).catch(e=>ss.forEach(s=>{data['S:'+s]={err:e.message}})))}
+ await Promise.all(jobs);
+ const ce=cs.filter(s=>data['C:'+s]&&data['C:'+s].err);
+ if(fk&&fusionErr)$('#msg').textContent+=' Bitpanda-Daten nicht abrufbar ('+fusionErr+'), Krypto kommt ersatzweise von Binance.';
+ if(cs.length&&ce.length===cs.length&&ce.every(s=>data['C:'+s].err===blocked))$('#msg').textContent+=' Alle Abfragen wurden vom Browser blockiert. Das passiert meist in der Vorschau einer App. Speichere die Datei und öffne sie direkt in Safari, Chrome oder Firefox.';
+ loaded=true;busy=false;cd=+$('#iv').value;render()}
+
+/* ---------- Anzeige ---------- */
+const fp=x=>x>=100?x.toFixed(2):x>=1?x.toFixed(3):x.toFixed(5);
+const getLog=()=>{try{return JSON.parse(st.get('log','[]'))}catch(e){return[]}};
+const C=id=>+$('#'+id).value||0;
+const fz=r=>!r.dir?'':r.nr<=0?'<span class="S">Kosten fressen das Ziel</span>':(r.nr>=1.5?'<span class="L">lohnt sich</span>':'<span class="err">Kosten zu hoch</span>')+` (nötig ${(100/(1+r.nr)).toFixed(0)} % Treffer)`;
+const NPOS=()=>C('eins')*Math.max(1,C('hebel'));
+const cost=stock=>{const n=NPOS();return 2*(stock?C('fak'):C('fkr'))+C('sp')+C('zs')+(stock&&n>0?C('fx')/n*100:0)};
+const calcT=x=>{const co=cost(x.st),pct=x.res==='ziel'?2*x.rk-co:-(x.rk+co);return{r:pct/x.rk,eur:NPOS()*pct/100}};
+const cv=(x,c)=>{const w=$('#cur').value;return c===w||!(usd>0)?x:w==='EUR'?x/usd:x*usd};
+const sy=c=>{const w=$('#cur').value;return(c===w||usd>0)?(w==='EUR'?'€':'$'):(c==='EUR'?'€':'$')};
+const ago=m=>m<120?m+' Min':m<2880?Math.round(m/60)+' Std':Math.round(m/1440)+' Tage';
+const trades=()=>{try{return JSON.parse(st.get('tr','{}'))}catch(e){return{}}};
+/* Jedes neue Signal wird als Trade nachgespielt: Einstieg am Kerzenschluss, danach zählt, was zuerst kommt (Stop oder Ziel). */
+function sim(key,sym,bars,stock,cur){
+ const tf=TF(),T=trades(),n=bars.length;let free=0,prev=0;
+ for(let i=59;i<n-1;i++){
+  const a=analyze(bars.slice(0,i+1),stock,tf);if(a.err)continue;
+  if(a.dir&&a.dir!==prev&&i>=free){
+   let res='offen',end=n-1;
+   for(let j=i+1;j<n;j++){const b=bars[j],hs=a.dir>0?b.l<=a.stop:b.h>=a.stop,ht=a.dir>0?b.h>=a.tgt:b.l<=a.tgt;
+    if(hs){res='stop';end=j;break}if(ht){res='ziel';end=j;break}}
+   free=res==='offen'?n:end+1;
+   T[key+'|'+tf+'|'+bars[i].t]={k:sym,tf,t:bars[i].t,d:a.dir,p:a.p,s:a.stop,z:a.tgt,rk:a.risk,res,cur,st:stock?1:0};
+  }
+  prev=a.dir}
+ const ks=Object.keys(T);if(ks.length>400)ks.sort((x,y)=>T[x].t-T[y].t).slice(0,ks.length-400).forEach(k=>delete T[k]);
+ st.set('tr',JSON.stringify(T))}
+function stats(){
+ const T=Object.values(trades()).filter(x=>x.tf===TF());
+ const row=(nm,L)=>{const c=L.filter(x=>x.res!=='offen'),w=c.filter(x=>x.res==='ziel'),k=c.map(calcT),R=k.reduce((a,x)=>a+x.r,0),E=k.reduce((a,x)=>a+x.eur,0);
+  return `<tr><td>${nm}</td><td>${L.length}</td><td>${w.length}</td><td>${c.length-w.length}</td><td>${L.length-c.length}</td><td>${c.length?(w.length/c.length*100).toFixed(0)+' %':''}</td><td>${c.length?(R/c.length).toFixed(2):''}</td><td class="${E>=0?'L':'S'}">${c.length?E.toFixed(2)+' €':''}</td></tr>`};
+ $('#stat').innerHTML='<table><tr><th>Richtung</th><th>Signale</th><th>Ziel</th><th>Stop</th><th>offen</th><th>Trefferquote</th><th>Ø R netto</th><th>Summe netto</th></tr>'+row('Alle',T)+row('Long',T.filter(x=>x.d>0))+row('Short',T.filter(x=>x.d<0))+'</table><div class="m small">Jedes neue Signal zählt als Trade mit Einstieg am Kerzenschluss. Treffen Stop und Ziel in derselben Kerze, zählt der Stop. Die Auswertung rechnet rückwirkend über die geladenen Kerzen und speichert die Trades im Browser. Einsatz und Kosten wie oben eingestellt.</div>'}
+function render(){
+ const rows=[];
+ list('#cs').forEach(s=>data['C:'+s]&&rows.push({k:s,t:'Krypto',key:'C:'+s,...data['C:'+s]}));
+ list('#ss').forEach(s=>data['S:'+s]&&rows.push({k:s,t:'Aktie',key:'S:'+s,...data['S:'+s]}));
+ rows.sort((a,b)=>(b.err?-1:Math.abs(b.sc))-(a.err?-1:Math.abs(a.sc)));
+ $('#rate').textContent=usd>0?'1 € = '+usd.toFixed(4)+' $ (Binance EURUSDT)':'Eurokurs nicht geladen: Preise bleiben in ihrer Ursprungswährung.';
+ const only=$('#show').value==='sig';
+ rows.forEach(r=>{if(r.err)return;
+  r.P=cv(r.p,r.cur);r.St=r.stop==null?null:cv(r.stop,r.cur);r.Tg=r.tgt==null?null:cv(r.tgt,r.cur);r.sy=sy(r.cur);
+  const stock=r.key[0]==='S',n=NPOS(),tg=r.risk*2;
+  r.co=cost(stock);r.nr=(tg-r.co)/(r.risk+r.co);r.win=n*(tg-r.co)/100;r.lose=-n*(r.risk+r.co)/100});
+ $('#tb').innerHTML='<tr><th>Wert</th><th>Signal</th><th>Einstieg</th><th>Stop</th><th>Ziel</th><th>Netto Ziel / Stop</th></tr>'+
+ rows.filter(r=>r.err||!only||r.dir).map(r=>r.err?`<tr><td>${r.k}<span class="sub">${r.t}</span></td><td colspan="5" class="err">${esc(r.err)}</td></tr>`:
+  `<tr><td><b>${r.k}</b><span class="sub">${r.t}, ${r.src||''}, Kerze vor ${ago(r.age)}</span></td><td class="sig ${r.dir>0?'L':r.dir<0?'S':'N'}">${r.dir>0?'LONG':r.dir<0?'SHORT':'neutral'}${r.strong?' stark':''}<span class="sub">Score ${r.sc>0?'+':''}${r.sc}</span></td><td>${fp(r.P)} ${r.sy}</td>`+
+  (r.dir?`<td>${fp(r.St)} ${r.sy}<span class="sub">${r.risk.toFixed(2)} % Abstand</span></td><td>${fp(r.Tg)} ${r.sy}</td><td>+${r.win.toFixed(2)} € / ${r.lose.toFixed(2)} €<span class="sub">Kosten ${r.co.toFixed(2)} %, ${fz(r)}</span></td></tr><tr><td colspan="6">${r.R.map(x=>`<span class="chip ${x.s>0?'L':'S'}">${x.t}</span>`).join('')}</td></tr>`:'<td colspan="3"></td></tr>')).join('');
+ const T=Object.values(trades()).filter(x=>x.tf===TF()).sort((a,b)=>b.t-a.t).slice(0,40);
+ $('#lg').innerHTML=T.length?'<tr><th>Einstieg (Berlin)</th><th>Wert</th><th>Richtung</th><th>Einstieg</th><th>Stop / Ziel</th><th>Ergebnis</th></tr>'+T.map(x=>{const c=calcT(x),u=sy(x.cur);
+  return `<tr><td>${new Date(x.t).toLocaleString('de-DE',{timeZone:'Europe/Berlin',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td>${x.k}</td><td class="sig ${x.d>0?'L':'S'}">${x.d>0?'LONG':'SHORT'}</td><td>${fp(cv(x.p,x.cur))} ${u}</td><td>${fp(cv(x.s,x.cur))} / ${fp(cv(x.z,x.cur))} ${u}</td><td>${x.res==='ziel'?'<span class="L">Ziel erreicht</span>':x.res==='stop'?'<span class="S">Stop getroffen</span>':'<span class="m">offen</span>'}${x.res==='offen'?'':`<span class="sub">${c.r.toFixed(2)} R, ${c.eur.toFixed(2)} €</span>`}</td></tr>`}).join(''):
+  '<tr><td class="m">Noch keine Signale für diesen Zeitrahmen.</td></tr>';
+ stats()}
+
+$('#go').onclick=load;
+$('#clr').onclick=()=>{st.set('tr','{}');render()};
+$('#cur').onchange=()=>{st.set('cur',$('#cur').value);render()};$('#show').onchange=()=>{st.set('show',$('#show').value);render()};
+$('#tf').onchange=()=>{st.set('tf',TF());for(const k in data)delete data[k];lastS=0;loaded=false;cd=0;render()};
+let wl=null;async function wake(){try{wl=await navigator.wakeLock.request('screen');$('#wk').textContent='Bildschirm bleibt an'}catch(e){$('#wk').textContent='Wach halten nicht möglich'}}
+$('#wk').onclick=wake;document.addEventListener('visibilitychange',()=>{if(wl&&document.visibilityState==='visible')wake()});
+setInterval(()=>{clock();if(cd>0){cd--;$('#cd').textContent='nächste Aktualisierung in '+cd+' s'}else if(!busy)load()},1000);
+clock();
+</script></body></html>
