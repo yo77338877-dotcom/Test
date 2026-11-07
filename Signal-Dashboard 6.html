@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Signal-Dashboard 6</title>
+<style>
+:root{--bg:#18232e;--p:#213141;--l:#2d4256;--t:#e6edf3;--m:#8ea2b5;--long:#34c5a1;--short:#ff7b5c;--gold:#f0c35a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t);font:15px/1.45 "Avenir Next","Segoe UI",system-ui,sans-serif;font-variant-numeric:tabular-nums}
+main{max-width:1100px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px}
+.top{display:grid;gap:12px;grid-template-columns:1fr;margin-top:12px}
+@media(min-width:760px){.top{grid-template-columns:1fr 1.3fr}}
+.card{background:var(--p);border:1px solid var(--l);border-radius:10px;padding:12px 14px}
+.m{color:var(--m)}.clock{font-size:22px;font-weight:600}
+.ctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.ctl label{display:flex;gap:6px;align-items:center}
+input,select,button{background:var(--bg);color:var(--t);border:1px solid var(--l);border-radius:8px;padding:8px 10px;font:inherit}
+input[type=number]{width:90px}button{cursor:pointer;background:var(--l)}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:600px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--l)}th{color:var(--m);font-weight:500}
+.sig{font-weight:700}.L{color:var(--long)}.S{color:var(--short)}.N{color:var(--m)}
+.chip{display:inline-block;margin:0 4px 0 0;padding:1px 7px;border-radius:99px;font-size:12px;border:1px solid var(--l)}
+.chip.L{border-color:var(--long)}.chip.S{border-color:var(--short)}
+a{color:var(--gold)}.sub{display:block;color:var(--m);font-size:12px}.err{color:var(--gold)}.small{font-size:13px}
+details{margin-top:16px}summary{cursor:pointer;font-weight:600}dt{font-weight:600;margin-top:8px}dd{margin:0;color:var(--m)}
+</style></head><body><main>
+<h1>Signal-Dashboard 6</h1>
+<div class="m">Regelbasierte Long- und Short-Signale mit klaren Setups. Du handelst selbst, das Dashboard handelt nicht.</div>
+<div class="top">
+ <div class="card"><div class="clock" id="clk"></div><div id="phase"></div><div class="m small" id="ptxt"></div></div>
+ <div class="card">
+  <input id="fkey" type="password" placeholder="Bitpanda-Fusion-Key, nur Read-Recht (Krypto)" aria-label="Bitpanda-Fusion-Key" style="width:100%">
+  <div class="m small" style="margin:4px 0 8px">Bitpanda: Kontoeinstellungen, API-Schlüssel, Fusion. Nur Read vergeben, niemals Trade.</div>
+  <input id="key" type="password" placeholder="Twelve-Data-API-Key (Aktien)" aria-label="Twelve-Data-API-Key" style="width:100%">
+  <div class="ctl"><select id="iv" aria-label="Aktualisierung"><option value="30">alle 30 Sek</option><option value="60">alle 1 Min</option><option value="180">alle 3 Min</option><option value="300">alle 5 Min</option></select><button id="go">Jetzt laden</button><span class="m small" id="cd"></span></div>
+  <div class="ctl"><input id="cs" size="24" aria-label="Krypto-Liste"><input id="ss" size="24" aria-label="Aktien-Liste"></div>
+  <div class="ctl"><select id="mode" aria-label="Modus"><option value="K">Kurzfristig / Day Trading</option><option value="L">Langfristig / Swing Trading</option></select><select id="area" aria-label="Bereich"><option value="C">Krypto</option><option value="S">Aktien</option></select>
+  <select id="cur" aria-label="Anzeige"><option value="EUR">Anzeige in €</option><option value="USD">Anzeige in $</option></select>
+  <select id="show" aria-label="Zeige"><option value="all">alle Werte</option><option value="sig">nur Signale</option></select></div>
+  <div class="ctl"><button id="wk">Bildschirm wach halten</button><button id="ex">Trades kopieren</button></div>
+  <div class="ctl"><label>Positionsgröße € <input id="eins" type="number" min="1"></label><label>Krypto-Gebühr % je Seite <input id="fkr" type="number" step="0.01"></label></div>
+  <div class="m small" style="margin-top:6px"><b>Kurzfristig:</b> 5-Minuten-Kerzen, Haltedauer höchstens 20 Minuten. <b>Langfristig:</b> Krypto 4-Stunden-Kerzen, Aktien Tageskerzen, Haltedauer höchstens 5 Kerzen (Aktien) bzw. 5 Tage (Krypto). Jede Linie hat eigene Signale und eine eigene Auswertung.<br>Gebühren: Krypto 0,05 % je Seite, ein vorsichtiger Mittelwert zwischen Bitget-Futures Maker 0,02 % und Taker 0,06 %. Aktien 1 € je Order, also 2 € pro Trade. Spread 0.<span id="rate"></span></div>
+ </div>
+</div>
+<h2>Signale</h2>
+<div class="wrap"><table id="tb"></table></div>
+<div id="msg" class="err small"></div>
+<div class="m small">Kurzfristig: Stop 1,5 x ATR, Ziel 3 x ATR (bei Umkehr der Mittelwert). Langfristig: Stop 2,5 x ATR, Ziel 5 x ATR. Brutto heißt ohne Gebühren, netto mit Gebühren. Läuft ein Trade ohne Stop oder Ziel bis zum Ende der Haltedauer, wird er zum Kerzenschluss beendet ("Zeit").</div>
+<h2>Auswertung der Signale</h2>
+<div class="card wrap" id="stat"></div>
+<h2>Wann treffen die Signale?</h2>
+<div class="card wrap" id="ana"></div>
+<h2>Signal-Protokoll</h2>
+<div class="wrap"><table id="lg"></table></div>
+<div class="ctl"><button id="clr">Protokoll leeren</button></div>
+<details><summary>Abkürzungen erklärt</summary><dl>
+<dt>Long / Short</dt><dd>Long wettet auf steigende, Short auf fallende Kurse.</dd>
+<dt>Setup</dt><dd>Das Muster hinter einem Signal. Pro Kerze gilt höchstens ein Setup.</dd>
+<dt>Ausbruch / Breakout</dt><dd>Der Kurs bricht über das Hoch (Long) oder unter das Tief (Short) der letzten 20 Kerzen aus, im Trend und mit erhöhtem Volumen.</dd>
+<dt>Pullback / Rücksetzer</dt><dd>Im Trend setzt der Kurs kurz zurück zum EMA 21 und dreht dann wieder in Trendrichtung.</dd>
+<dt>Umkehr / Mean Reversion</dt><dd>In einer Seitwärtsphase fällt der Kurs aus dem Bollinger-Band und kehrt zurück. Das Ziel ist der Mittelwert. Das ist ein Muster, kein Swing Trade. Swing Trading beschreibt nur die Haltedauer von Tagen.</dd>
+<dt>Trend-Score / Trend Following</dt><dd>Langfristige Linie: acht Kriterien (Trend, MACD, RSI, ADX, 20-Kerzen-Hoch oder -Tief, Volumen, Momentum). Ab 5 gleichgerichteten Kriterien gibt es ein Signal.</dd>
+<dt>Day Trading / Swing Trading</dt><dd>Day Trading hält Minuten bis Stunden, Swing Trading mehrere Tage.</dd>
+<dt>Bestätigungen</dt><dd>Fünf Zusatzprüfungen: VWAP, Volumen mindestens 1,2-fach, Trendstärke (ADX), MACD und Kerze in Signalrichtung. Ab 3 von 5 heißt ein Signal "stark".</dd>
+<dt>ADX</dt><dd>Misst die Stärke eines Trends, nicht seine Richtung. Ab 22 gilt ein Markt als trendend, unter 20 als seitwärts.</dd>
+<dt>Stop / Ziel</dt><dd>Stop-Loss ist der Ausstieg zur Verlustbegrenzung, Ziel (Take-Profit) der Ausstieg mit Gewinn.</dd>
+<dt>R</dt><dd>1R ist dein Risiko bis zum Stop. Ein Ziel bei 2R bringt doppelt so viel, wie du am Stop verlierst.</dd>
+<dt>Brutto / Netto</dt><dd>Brutto ist das Ergebnis ohne Gebühren, netto das Ergebnis nach Gebühren.</dd>
+<dt>Zufall</dt><dd>So oft würde ein Münzwurf das Ziel vor dem Stop treffen. Erst eine höhere Trefferquote ist ein Vorteil.</dd>
+<dt>ATR</dt><dd>Average True Range, die durchschnittliche Schwankung einer Kerze. Stop und Ziel richten sich danach.</dd>
+<dt>EMA 9 / 21 / 50</dt><dd>Gleitende Durchschnitte, die neuere Kurse stärker gewichten.</dd>
+<dt>VWAP</dt><dd>Volumengewichteter Durchschnittspreis des Tages.</dd>
+<dt>RSI</dt><dd>Relative-Stärke-Index von 0 bis 100. Unter 30 gilt als überverkauft, über 70 als überkauft.</dd>
+<dt>Bollinger-Bänder</dt><dd>Kanal um den Durchschnitt, der die übliche Schwankung zeigt.</dd>
+<dt>Zeitrahmen</dt><dd>Länge einer Kerze. 1 bis 5 Minuten für schnelle Trades, 1 Stunde bis 1 Tag für Positionen über Stunden oder Tage.</dd>
+</dl></details>
+<p class="m small">Keine Anlageberatung. Die Regeln sind Standardverfahren des Daytradings, ihre Schwellen sind nicht optimiert. Ob ein Wert bei Bitpanda, Bitget oder Trade Republic handelbar ist, prüfst du dort selbst.</p>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const st={get(k,d){try{return localStorage.getItem(k)||d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+if(st.get('v','')!=='6'){st.set('tr','');st.set('v','6')}
+const MODES={K:{c:['5m',4],s:['5m',4]},L:{c:['4h',30],s:['1d',5]}};
+const TDI={'5m':'5min','1h':'1h','4h':'4h','1d':'1day'};
+const SN={'Ausbruch':'Ausbruch / Breakout','Pullback':'Pullback / Rücksetzer','Umkehr':'Umkehr / Mean Reversion','Trend-Score':'Trend-Score / Trend Following'};
+const DEF={key:'',fkey:'',cs:'BTC,ETH,SOL,XRP,DOGE,ADA,LINK,AVAX,DOT,LTC,BCH,ATOM,UNI,NEAR,XLM,TRX,SUI,APT,ARB,INJ',ss:'AAPL,MSFT,NVDA,TSLA,AMZN,META,GOOGL,AMD',iv:'180',mode:'K',cur:'EUR',show:'all',area:'C',eins:'1000',fkr:'0.05'};
+Object.keys(DEF).forEach(k=>$('#'+k).value=st.get(k,DEF[k]));
+const MD=()=>$('#mode').value,CF=st=>MODES[MD()][st?'s':'c'],TFx=st=>CF(st)[0],C=id=>+$('#'+id).value||0;
+const data={},RAW={};let usd=0,lastS=0,loaded=false,busy=false,cd=0,fusionErr='';
+const esc=s=>String(s).replace(/</g,'&lt;');
+const list=id=>$(id).value.toUpperCase().split(/[\s,]+/).filter(Boolean);
+
+/* ---------- Indikatoren ---------- */
+const ema=(a,n)=>{const k=2/(n+1);let e=a[0];return a.map((v,i)=>i?(e=v*k+e*(1-k)):v)};
+function rsi(c,n=14){let g=0,l=0;for(let i=1;i<=n;i++){const d=c[i]-c[i-1];d>0?g+=d:l-=d}g/=n;l/=n;
+ for(let i=n+1;i<c.length;i++){const d=c[i]-c[i-1];g=(g*(n-1)+Math.max(d,0))/n;l=(l*(n-1)+Math.max(-d,0))/n}
+ return l===0?100:100-100/(1+g/l)}
+function atr(b,n=14){const tr=i=>Math.max(b[i].h-b[i].l,Math.abs(b[i].h-b[i-1].c),Math.abs(b[i].l-b[i-1].c));
+ let a=0;for(let i=1;i<=n;i++)a+=tr(i);a/=n;for(let i=n+1;i<b.length;i++)a=(a*(n-1)+tr(i))/n;return a}
+function bb(c,i){const s=c.slice(i-19,i+1),m=s.reduce((x,y)=>x+y)/20,sd=Math.sqrt(s.reduce((x,y)=>x+(y-m)**2,0)/20);return{u:m+2*sd,l:m-2*sd}}
+function adx(b,n=14){let tr=0,pd=0,md=0;const o=[];
+ for(let i=1;i<b.length;i++){const u=b[i].h-b[i-1].h,d=b[i-1].l-b[i].l,t=Math.max(b[i].h-b[i].l,Math.abs(b[i].h-b[i-1].c),Math.abs(b[i].l-b[i-1].c));
+  const p=u>d&&u>0?u:0,m=d>u&&d>0?d:0;
+  if(i<=n){tr+=t;pd+=p;md+=m}else{tr=tr-tr/n+t;pd=pd-pd/n+p;md=md-md/n+m}
+  if(i>=n){const pi=100*pd/(tr||1),mi=100*md/(tr||1);o.push({dx:100*Math.abs(pi-mi)/((pi+mi)||1),pi,mi})}}
+ let a=o.slice(0,n).reduce((x,y)=>x+y.dx,0)/n;for(let i=n;i<o.length;i++)a=(a*(n-1)+o[i].dx)/n;
+ const l=o[o.length-1];return{adx:a,pi:l.pi,mi:l.mi}}
+
+/* ---------- Signalerkennung ---------- */
+function analyze(b,stock,m){
+ if(!b||b.length<60)return{err:'zu wenig Kerzen'};
+ return m==='L'?analyzeL(b):analyzeK(b)}
+const age=b=>Math.round((Date.now()-b[b.length-1].t)/6e4);
+/* Kurzfristig: drei Setups, jeweils nur im passenden Marktumfeld */
+function analyzeK(b){
+ const n=b.length-1,c=b.map(x=>x.c),p=c[n],e9=ema(c,9),e21=ema(c,21),e50=ema(c,50),e26=ema(c,26),r=rsi(c),a=atr(b),X=adx(b);
+ const mac=ema(c,12).map((v,i)=>v-e26[i]),sg=ema(mac,9),h=mac.map((v,i)=>v-sg[i]);
+ const trend=X.adx>=22,range=X.adx<20,up=e21[n]>e50[n]&&p>e50[n]&&X.pi>X.mi,dn=e21[n]<e50[n]&&p<e50[n]&&X.mi>X.pi;
+ const av=b.slice(n-21,n-1).reduce((x,y)=>x+y.v,0)/20,rv=av>0?b[n-1].v/av:0;
+ const hh=Math.max(...b.slice(n-20,n).map(x=>x.h)),ll=Math.min(...b.slice(n-20,n).map(x=>x.l));
+ const tu=b.slice(n-5,n).some((x,j)=>x.l<=e21[n-5+j]),tdn=b.slice(n-5,n).some((x,j)=>x.h>=e21[n-5+j]);
+ const q=bb(c,n),q1=bb(c,n-1),mid=c.slice(n-19).reduce((x,y)=>x+y)/20;
+ let dir=0,su='';
+ if(trend&&up&&p>hh&&rv>=1.5){dir=1;su='Ausbruch'}
+ else if(trend&&dn&&p<ll&&rv>=1.5){dir=-1;su='Ausbruch'}
+ else if(trend&&up&&tu&&p>e9[n]&&c[n-1]<=e9[n-1]&&r>40&&r<65){dir=1;su='Pullback'}
+ else if(trend&&dn&&tdn&&p<e9[n]&&c[n-1]>=e9[n-1]&&r<60&&r>35){dir=-1;su='Pullback'}
+ else if(range&&c[n-1]<q1.l&&p>q.l&&r<40&&p>b[n].o&&mid-p>=a){dir=1;su='Umkehr'}
+ else if(range&&c[n-1]>q1.u&&p<q.u&&r>60&&p<b[n].o&&p-mid>=a){dir=-1;su='Umkehr'}
+ const tgt=dir?(su==='Umkehr'?mid:p+dir*3*a):null,bs=[];
+ if(dir){
+  const d=Math.floor(b[n].t/864e5);let pv=0,vv=0;b.filter(x=>Math.floor(x.t/864e5)===d).forEach(x=>{pv+=(x.h+x.l+x.c)/3*x.v;vv+=x.v});
+  if(vv>0&&(dir>0?p>pv/vv:p<pv/vv))bs.push('VWAP');
+  if(rv>=1.2)bs.push('Volumen '+rv.toFixed(1)+'x');
+  if(su==='Umkehr'?X.adx<15:X.adx>=25)bs.push('ADX '+X.adx.toFixed(0));
+  if(dir>0?h[n]>h[n-1]:h[n]<h[n-1])bs.push('MACD');
+  if(dir>0?p>b[n].o:p<b[n].o)bs.push('Kerze');
+ }
+ return{p,dir,su,bs,nb:bs.length,nt:5,strong:bs.length>=3,stop:dir?p-dir*1.5*a:null,tgt,risk:1.5*a/p*100,tgp:dir?Math.abs(tgt-p)/p*100:0,
+  rg:trend?(up?'Aufwärtstrend':dn?'Abwärtstrend':'Trend unklar'):range?'Seitwärts':'Übergang',age:age(b)}}
+/* Langfristig: acht Kriterien, Signal ab fünf in dieselbe Richtung */
+function analyzeL(b){
+ const n=b.length-1,c=b.map(x=>x.c),p=c[n],e20=ema(c,20),e50=ema(c,50),e26=ema(c,26),r=rsi(c),a=atr(b),X=adx(b);
+ const mac=ema(c,12).map((v,i)=>v-e26[i]),sg=ema(mac,9),h=mac.map((v,i)=>v-sg[i]);
+ const hh=Math.max(...b.slice(n-20,n).map(x=>x.h)),ll=Math.min(...b.slice(n-20,n).map(x=>x.l));
+ const av=b.slice(n-21,n-1).reduce((x,y)=>x+y.v,0)/20,k=b[n-1],R=[],add=(s,t)=>R.push({s,t});
+ add(p>e50[n]?1:-1,p>e50[n]?'über EMA 50':'unter EMA 50');
+ add(e20[n]>e50[n]?1:-1,e20[n]>e50[n]?'EMA 20 über 50':'EMA 20 unter 50');
+ if(h[n]>0&&h[n]>h[n-1])add(1,'MACD steigt');else if(h[n]<0&&h[n]<h[n-1])add(-1,'MACD fällt');
+ if(r>=50&&r<70)add(1,'RSI '+r.toFixed(0));else if(r<50&&r>30)add(-1,'RSI '+r.toFixed(0));
+ if(X.adx>=20)add(X.pi>X.mi?1:-1,'ADX '+X.adx.toFixed(0)+(X.pi>X.mi?' auf':' ab'));
+ if(p>hh)add(1,'20-Kerzen-Hoch');else if(p<ll)add(-1,'20-Kerzen-Tief');
+ if(av>0&&k.v/av>=1.3)add(k.c>=k.o?1:-1,'Volumen '+(k.v/av).toFixed(1)+'x');
+ add(p>=c[n-20]?1:-1,p>=c[n-20]?'Momentum hoch':'Momentum runter');
+ const sc=R.reduce((x,y)=>x+y.s,0);let dir=sc>=5?1:sc<=-5?-1:0;
+ if((dir>0&&r>75)||(dir<0&&r<25))dir=0;
+ const bs=dir?R.filter(x=>x.s===dir).map(x=>x.t):[];
+ return{p,dir,su:'Trend-Score',bs,nb:bs.length,nt:8,strong:dir&&Math.abs(sc)>=6,stop:dir?p-dir*2.5*a:null,tgt:dir?p+dir*5*a:null,risk:2.5*a/p*100,tgp:dir?5*a/p*100:0,
+  rg:'Score '+(sc>0?'+':'')+sc+' von 8',age:age(b)}}
+
+/* ---------- Tageszeit (New York) ---------- */
+function nyNow(){const f=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour12:false,weekday:'short',hour:'numeric',minute:'numeric'}).formatToParts(new Date()),g=t=>f.find(x=>x.type===t).value;
+ return{wd:g('weekday'),m:(+g('hour')%24)*60+ +g('minute')}}
+function phase(){const{wd,m}=nyNow();
+ if(wd==='Sat'||wd==='Sun'||m<570||m>=960)return['US-Börse geschlossen','Aktiensignale beruhen auf der letzten Sitzung. Krypto läuft rund um die Uhr.',false];
+ if(m<630)return['Eröffnungsstunde','Höchste Volatilität, breite Spreads. Fehlausbrüche sind häufig.',true];
+ if(m<840)return['Mittagsphase','Volumen fällt, Kurse laufen oft seitwärts. Trendsignale sind schwächer.',true];
+ if(m<900)return['Nachmittag','Das Volumen kehrt zurück, der Tagestrend setzt sich häufig fort.',true];
+ return['Power Hour','Zweite Volumenspitze vor Handelsschluss, oft klare Richtung. Gehebelte Positionen vor 16:00 New York schließen.',true]}
+function clock(){const t=new Date(),f=z=>t.toLocaleTimeString('de-DE',{timeZone:z,hour:'2-digit',minute:'2-digit'}),[p,x]=phase();
+ $('#clk').textContent=f('Europe/Berlin')+' Berlin / '+f('America/New_York')+' New York';
+ $('#phase').innerHTML='<b>'+p+'</b>';$('#ptxt').textContent=x}
+
+/* ---------- Daten ---------- */
+const pd=d=>Date.parse((d.length<11?d+'T00:00:00':d.replace(' ','T'))+'Z');
+const blocked='Verbindung blockiert (Load failed)';
+async function hit(url,opt){let r;try{r=await fetch(url,opt)}catch(e){throw new Error(blocked)}
+ if(r.status===401||r.status===403)throw new Error('Key ungültig oder ohne Read-Recht ('+r.status+')');
+ if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
+async function getCrypto(s,fkey){
+ if(fkey){try{
+  const j=await hit('https://api.fusion.bitpanda.com/v1/candles/'+s+'-EUR?interval='+TFx(false)+'&limit=200',{headers:{'x-api-key':fkey}});
+  const a=(Array.isArray(j)?j:j.candles||j.data||[]).map(k=>({t:k.timestamp<1e12?k.timestamp*1000:k.timestamp,o:+k.open,h:+k.high,l:+k.low,c:+k.close,v:+k.volume})).sort((x,y)=>x.t-y.t);
+  if(a.length)return{bars:a,src:'Bitpanda'};throw new Error('keine Kerzen für '+s+'-EUR')
+ }catch(e){fusionErr=e.message}}
+ const j=await hit('https://api.binance.com/api/v3/klines?symbol='+s+'USDT&interval='+TFx(false)+'&limit=500');
+ return{bars:j.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]})),src:fkey?'Binance (Ersatz)':'Binance'}}
+async function getStocks(l,key){
+ const td=TDI[TFx(true)];
+ const r=await fetch('https://api.twelvedata.com/time_series?symbol='+l.join(',')+'&interval='+td+'&outputsize=500&timezone=UTC&apikey='+encodeURIComponent(key));
+ const j=await r.json(),out={};
+ l.forEach(s=>{const d=l.length===1?j:j[s];
+  out[s]=d&&d.values?d.values.map(v=>({t:pd(v.datetime),o:+v.open,h:+v.high,l:+v.low,c:+v.close,v:+v.volume})).reverse():{err:(d&&d.message)||j.message||'keine Daten'}});
+ return out}
+function proc(key){const R=RAW[key];data[key]={...analyze(R.bars,R.stock,MD()),src:R.src,cur:R.cur};sim(key,R.sym,R.bars,R.stock,R.cur)}
+async function load(){
+ if(busy)return;busy=true;$('#msg').textContent='';
+ ['key','fkey','cs','ss','iv'].forEach(k=>st.set(k,$('#'+k).value));
+ const cs=list('#cs'),ss=list('#ss'),key=$('#key').value.trim(),fk=$('#fkey').value.trim(),jobs=[];
+ jobs.push(hit('https://api.binance.com/api/v3/ticker/price?symbol=EURUSDT').then(j=>{usd=+j.price||usd}).catch(()=>{}));
+ fusionErr='';
+ cs.forEach(s=>jobs.push(getCrypto(s,fk).then(o=>{RAW['C:'+s]={bars:o.bars,stock:false,cur:o.src==='Bitpanda'?'EUR':'USD',src:o.src,sym:s};proc('C:'+s)}).catch(e=>{data['C:'+s]={err:e.message}})));
+ if(ss.length&&(phase()[2]||!loaded)&&(!key||Date.now()-lastS>290000)){
+  if(!key)$('#msg').textContent='Für Aktien den Twelve-Data-Key eintragen (kostenlos auf twelvedata.com).';
+  else{lastS=Date.now();jobs.push(getStocks(ss,key).then(o=>ss.forEach(s=>{if(Array.isArray(o[s])){RAW['S:'+s]={bars:o[s],stock:true,cur:'USD',src:'Twelve Data',sym:s};proc('S:'+s)}else data['S:'+s]=o[s]})).catch(e=>ss.forEach(s=>{data['S:'+s]={err:e.message}})))}}
+ await Promise.all(jobs);
+ const ce=cs.filter(s=>data['C:'+s]&&data['C:'+s].err);
+ if(fk&&fusionErr)$('#msg').textContent+=' Bitpanda-Daten nicht abrufbar ('+fusionErr+'), Krypto kommt ersatzweise von Binance.';
+ if(cs.length&&ce.length===cs.length&&ce.every(s=>data['C:'+s].err===blocked))$('#msg').textContent+=' Alle Abfragen wurden vom Browser blockiert. Das passiert meist in der Vorschau einer App. Öffne die Seite direkt in Safari, Chrome oder Firefox.';
+ loaded=true;busy=false;cd=+$('#iv').value;render()}
+
+/* ---------- Trades nachspielen und auswerten ---------- */
+const cost=stock=>stock?(C('eins')>0?2/C('eins')*100:0):2*C('fkr');
+const calcT=x=>{const pc=x.gp-cost(x.st);return{g:x.gp/x.rk,r:pc/x.rk,eur:C('eins')*pc/100,w:x.gp>0}};
+const cv=(x,c)=>{const w=$('#cur').value;return c===w||!(usd>0)?x:w==='EUR'?x/usd:x*usd};
+const sy=c=>{const w=$('#cur').value;return(c===w||usd>0)?(w==='EUR'?'€':'$'):(c==='EUR'?'€':'$')};
+const fp=x=>x>=100?x.toFixed(2):x>=1?x.toFixed(3):x.toFixed(5);
+const ago=m=>m<120?m+' Min':m<2880?Math.round(m/60)+' Std':Math.round(m/1440)+' Tage';
+const trades=()=>{try{return JSON.parse(st.get('tr','{}'))}catch(e){return{}}};
+const TR=()=>Object.values(trades()).filter(x=>x.su&&x.mo===MD()&&(x.st?'S':'C')===$('#area').value);
+const col=v=>v>=0?'L':'S';
+function sim(key,sym,bars,stock,cur){
+ const m=MD(),mb=CF(stock)[1],T=trades(),n=bars.length,W=m==='L'?250:200;let free=0,prev=0;
+ for(let i=59;i<n-1;i++){
+  const a=analyze(bars.slice(Math.max(0,i-W+1),i+1),stock,m);if(a.err)continue;
+  if(a.dir&&a.dir!==prev&&i>=free){
+   let res='offen',end=n-1,gp=0;
+   for(let j=i+1;j<n;j++){const b=bars[j],hs=a.dir>0?b.l<=a.stop:b.h>=a.stop,ht=a.dir>0?b.h>=a.tgt:b.l<=a.tgt;
+    if(hs){res='stop';end=j;gp=-a.risk;break}
+    if(ht){res='ziel';end=j;gp=a.tgp;break}
+    if(j-i>=mb){res='zeit';end=j;gp=a.dir*(b.c/a.p-1)*100;break}}
+   free=res==='offen'?n:end+1;
+   T[key+'|'+m+'|v6|'+bars[i].t]={k:sym,mo:m,t:bars[i].t,te:res==='offen'?0:bars[end].t,d:a.dir,p:a.p,s:a.stop,z:a.tgt,rk:a.risk,tp:a.tgp,gp,res,cur,st:stock?1:0,su:a.su,nb:a.nb,nt:a.nt}}
+  prev=a.dir}
+ const ks=Object.keys(T);if(ks.length>1500)ks.sort((x,y)=>T[x].t-T[y].t).slice(0,ks.length-1500).forEach(k=>delete T[k]);
+ st.set('tr',JSON.stringify(T))}
+function stats(){
+ const T=TR(),A=($('#area').value==='C'?'Krypto':'Aktien')+(MD()==='K'?' kurzfristig':' langfristig');
+ const row=(nm,L)=>{const c=L.filter(x=>x.res!=='offen'),k=c.map(calcT),w=k.filter(x=>x.w).length,s=f=>k.reduce((a,x)=>a+x[f],0),du=c.reduce((a,x)=>a+(x.te-x.t)/6e4,0)/(c.length||1),cn=r=>L.filter(x=>x.res===r).length;
+  return `<tr><td>${nm}</td><td>${L.length}</td><td>${cn('ziel')}</td><td>${cn('stop')}</td><td>${cn('zeit')}</td><td>${cn('offen')}</td><td>${c.length?(w/c.length*100).toFixed(0)+' %':''}</td><td class="${col(s('g'))}">${c.length?(s('g')/c.length).toFixed(2):''}</td><td class="${col(s('r'))}">${c.length?(s('r')/c.length).toFixed(2):''}</td><td class="${col(s('eur'))}">${c.length?s('eur').toFixed(2)+' €':''}</td><td>${c.length?ago(Math.round(du)):''}</td></tr>`};
+ $('#stat').innerHTML=`<table><tr><th>${A}</th><th>Signale</th><th>Ziel</th><th>Stop</th><th>Zeit</th><th>offen</th><th>Trefferquote</th><th>Ø R brutto</th><th>Ø R netto</th><th>Summe netto</th><th>Ø Dauer</th></tr>`+row('Alle',T)+row('Long',T.filter(x=>x.d>0))+row('Short',T.filter(x=>x.d<0))+'</table><div class="m small">Jedes neue Signal zählt als Trade mit Einstieg am Kerzenschluss. Trefferquote ist der Anteil der Trades mit Gewinn vor Gebühren. Treffen Stop und Ziel in derselben Kerze, zählt der Stop.</div>'}
+function grp(L,fn,names,lab,base){const m={};L.filter(x=>x.res!=='offen').forEach(x=>{(m[fn(x)]=m[fn(x)]||[]).push(x)});
+ return names.filter(k=>m[k]).map(k=>{const c=m[k],q=c.map(calcT),w=q.filter(x=>x.w).length,g=q.reduce((a,x)=>a+x.g,0)/c.length,r=q.reduce((a,x)=>a+x.r,0)/c.length,z=c.reduce((a,x)=>a+x.rk/(x.rk+x.tp),0)/c.length*100;
+  return `<tr><td>${lab?lab(k):k}</td><td>${c.length}</td><td>${(w/c.length*100).toFixed(0)} %</td>${base?`<td class="m">${z.toFixed(0)} %</td>`:''}<td class="${col(g)}">${g.toFixed(2)}</td><td class="${col(r)}">${r.toFixed(2)}</td></tr>`}).join('')}
+const tbl=(h,b,base)=>`<table><tr><th>${h}</th><th>Trades</th><th>Trefferquote</th>${base?'<th>Zufall ca.</th>':''}<th>Ø R brutto</th><th>Ø R netto</th></tr>${b||'<tr><td class="m" colspan="6">Noch keine Daten</td></tr>'}</table>`;
+function ana(){
+ const L=TR(),done=L.filter(x=>x.res!=='offen'),NT=MD()==='K'?5:8,hn=[0,4,8,12,16,20].map(b=>b+'-'+(b+4)+' Uhr');
+ const hb=x=>{const h=parseInt(new Date(x.t).toLocaleString('de-DE',{timeZone:'Europe/Berlin',hour:'2-digit',hour12:false}),10)%24,b=Math.floor(h/4)*4;return b+'-'+(b+4)+' Uhr'};
+ const nbs=[...new Set(done.map(x=>x.nb))].sort((a,b)=>a-b).map(v=>v+' von '+NT);
+ $('#ana').innerHTML='<div class="m small">Zufall ca. heißt: So oft würde ein Münzwurf bei diesen Stop- und Zielabständen das Ziel treffen. Nur eine Trefferquote deutlich darüber ist ein Vorteil. Kleine Stichproben sind Zufall.</div>'+
+  tbl('Setup',grp(L,x=>x.su,['Ausbruch','Pullback','Umkehr','Trend-Score'],k=>SN[k],1),1)+
+  tbl('Bestätigungen',grp(L,x=>x.nb+' von '+NT,nbs))+tbl('Uhrzeit (Berlin)',grp(L,hb,hn))}
+
+/* ---------- Anzeige ---------- */
+const kv=r=>{const q=r.tgp>0?r.co/r.tgp*100:0;return[q,q>=100?['S','Kosten fressen das Ziel']:q>=30?['S','Kosten hoch']:q>=15?['err','Kosten mittel']:['L','Kosten niedrig']]};
+function render(){
+ const A=$('#area').value,rows=[];
+ if(A==='C')list('#cs').forEach(s=>data['C:'+s]&&rows.push({k:s,key:'C:'+s,...data['C:'+s]}));
+ else list('#ss').forEach(s=>data['S:'+s]&&rows.push({k:s,key:'S:'+s,...data['S:'+s]}));
+ rows.sort((a,b)=>(b.err?-1:b.dir?10+b.nb:0)-(a.err?-1:a.dir?10+a.nb:0));
+ $('#rate').textContent=usd>0?' 1 € = '+usd.toFixed(4)+' $ (Binance EURUSDT).':' Eurokurs nicht geladen, Preise bleiben in ihrer Ursprungswährung.';
+ const only=$('#show').value==='sig',n=C('eins');
+ rows.forEach(r=>{if(r.err)return;
+  r.P=cv(r.p,r.cur);r.St=r.stop==null?null:cv(r.stop,r.cur);r.Tg=r.tgt==null?null:cv(r.tgt,r.cur);r.sy=sy(r.cur);
+  r.co=cost(r.key[0]==='S');r.nr=(r.tgp-r.co)/(r.risk+r.co);r.rr=r.tgp/r.risk;r.win=n*(r.tgp-r.co)/100;r.lose=-n*(r.risk+r.co)/100});
+ $('#tb').innerHTML='<tr><th>Wert</th><th>Signal</th><th>Einstieg</th><th>Stop</th><th>Ziel</th><th>Netto Ziel / Stop</th></tr>'+
+ (rows.length?rows.filter(r=>r.err||!only||r.dir).map(r=>r.err?`<tr><td>${r.k}</td><td colspan="5" class="err">${esc(r.err)}</td></tr>`:
+  `<tr><td><b>${r.k}</b><span class="sub">${r.src||''}, Kerze vor ${ago(r.age)}</span></td><td class="sig ${r.dir>0?'L':r.dir<0?'S':'N'}">${r.dir>0?'LONG':r.dir<0?'SHORT':'neutral'}${r.strong?' stark':''}<span class="sub">${r.dir?SN[r.su]+', '+r.nb+' von '+r.nt+' bestätigt':r.rg}</span></td><td>${fp(r.P)} ${r.sy}</td>`+
+  (r.dir?`<td>${fp(r.St)} ${r.sy}<span class="sub">${r.risk.toFixed(2)} % Abstand</span></td><td>${fp(r.Tg)} ${r.sy}<span class="sub">${r.tgp.toFixed(2)} % Abstand</span></td><td>+${r.win.toFixed(2)} € / ${r.lose.toFixed(2)} €<span class="sub">Kosten ${r.co.toFixed(2)} %, <span class="${kv(r)[1][0]}">${kv(r)[1][1]}</span> (${kv(r)[0].toFixed(0)} % des Ziels)</span><span class="sub">Chance-Risiko ${r.rr.toFixed(1)} brutto, ${r.nr.toFixed(1)} netto</span></td></tr><tr><td colspan="6">${r.bs.map(x=>`<span class="chip ${r.dir>0?'L':'S'}">${x}</span>`).join('')||'<span class="sub">keine Zusatzbestätigung</span>'}</td></tr>`:'<td colspan="3"></td></tr>')).join(''):`<tr><td class="m" colspan="6">${A==='S'?'Noch keine Aktiendaten. Twelve-Data-Key eintragen. Außerhalb der US-Handelszeit lädt die Seite einmal und zeigt die letzte Sitzung.':'Noch keine Kryptodaten.'}</td></tr>`);
+ const T=TR().sort((a,b)=>b.t-a.t).slice(0,40);
+ $('#lg').innerHTML=T.length?'<tr><th>Einstieg (Berlin)</th><th>Wert</th><th>Richtung</th><th>Einstieg</th><th>Stop / Ziel</th><th>Ergebnis</th><th>Dauer</th></tr>'+T.map(x=>{const c=calcT(x),u=sy(x.cur);
+  return `<tr><td>${new Date(x.t).toLocaleString('de-DE',{timeZone:'Europe/Berlin',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td>${x.k}<span class="sub">${SN[x.su]}, ${x.nb} von ${x.nt}</span></td><td class="sig ${x.d>0?'L':'S'}">${x.d>0?'LONG':'SHORT'}</td><td>${fp(cv(x.p,x.cur))} ${u}</td><td>${fp(cv(x.s,x.cur))} / ${fp(cv(x.z,x.cur))} ${u}</td><td>${x.res==='ziel'?'<span class="L">Ziel erreicht</span>':x.res==='stop'?'<span class="S">Stop getroffen</span>':x.res==='zeit'?'<span class="err">Zeit abgelaufen</span>':'<span class="m">offen</span>'}${x.res==='offen'?'':`<span class="sub">${c.g.toFixed(2)} R brutto, ${c.r.toFixed(2)} R netto</span>`}</td><td class="m">${x.res==='offen'?'':ago(Math.round((x.te-x.t)/6e4))}</td></tr>`}).join(''):
+  `<tr><td class="m">Noch keine ${A==='C'?'Krypto':'Aktien'}-Signale in dieser Linie.</td></tr>`;
+ stats();ana()}
+
+/* ---------- Bedienung ---------- */
+$('#go').onclick=load;
+$('#clr').onclick=()=>{st.set('tr','{}');render()};
+['cur','show','area'].forEach(k=>$('#'+k).onchange=()=>{st.set(k,$('#'+k).value);render()});
+['eins','fkr'].forEach(k=>$('#'+k).addEventListener('input',()=>{st.set(k,$('#'+k).value);render()}));
+$('#mode').onchange=()=>{st.set('mode',MD());for(const k in data)delete data[k];for(const k in RAW)delete RAW[k];lastS=0;loaded=false;cd=0;render()};
+let wl=null;async function wake(){try{wl=await navigator.wakeLock.request('screen');$('#wk').textContent='Bildschirm bleibt an'}catch(e){$('#wk').textContent='Wach halten nicht möglich'}}
+$('#wk').onclick=wake;document.addEventListener('visibilitychange',()=>{if(wl&&document.visibilityState==='visible')wake()});
+$('#ex').onclick=async()=>{const L=TR().filter(x=>x.res!=='offen').map(x=>[x.k,x.t,x.d,x.su,x.nb,x.res,Math.round((x.te-x.t)/6e4),+x.rk.toFixed(3),+x.tp.toFixed(3),+x.gp.toFixed(3)]);
+ const txt='Spalten: wert, zeit, richtung, setup, bestätigungen, ergebnis, dauer in Min, stop%, ziel%, ergebnis% | '+$('#area').value+' '+MD()+'\n'+JSON.stringify(L);
+ try{await navigator.clipboard.writeText(txt);$('#ex').textContent='Kopiert ('+L.length+' Trades)'}catch(e){$('#msg').textContent='Kopieren nicht möglich.'}};
+setInterval(()=>{clock();if(cd>0){cd--;$('#cd').textContent='nächste Aktualisierung in '+cd+' s'}else if(!busy)load()},1000);
+clock();render();
+</script></body></html>
